@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -163,6 +164,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         _registerMobileChatShortcut();
         registerToolbarShortcuts(context, widget.id, gFFI);
       }
+      // Quest multi-display (fork): once the session is up, request all remote
+      // displays and tile them in this panel (if enabled and supported by the peer).
+      tryQuestSwitchToAllDisplays(gFFI);
     });
     WidgetsBinding.instance.addObserver(this);
 
@@ -1217,6 +1221,25 @@ class ImagePaint extends StatelessWidget {
       }
     }
     final adjust = c.getAdjustY();
+    // Quest multi-display (fork): draw every remote display at its offset in the
+    // union rect (`ffiModel.rect`), same layout as the remote virtual desktop.
+    if (m.isMobileMultiDisplay && m.displayImages.isNotEmpty) {
+      final union = ffiModel.rect;
+      final pi = ffiModel.pi;
+      final images = <MapEntry<ui.Image, Offset>>[];
+      final keys = m.displayImages.keys.toList()..sort();
+      for (final d in keys) {
+        final r = pi.getDisplayRect(d);
+        if (r == null) continue;
+        images.add(MapEntry(
+            m.displayImages[d]!,
+            Offset(r.left - (union?.left ?? 0), r.top - (union?.top ?? 0))));
+      }
+      return CustomPaint(
+        painter: MultiDisplayImagePainter(
+            images: images, x: c.x / s, y: (c.y + adjust) / s, scale: s),
+      );
+    }
     return CustomPaint(
       painter: ImagePainter(
           image: m.image, x: c.x / s, y: (c.y + adjust) / s, scale: s),
@@ -1284,8 +1307,11 @@ void showOptions(
     displays.add(Padding(padding: const EdgeInsets.only(top: 8), child: image));
   }
   final privacyModeState = PrivacyModeState.find(id);
+  // Quest multi-display (fork): keep the selector visible in all-displays mode
+  // (so the user can go back to one display) when the peer supports it.
+  final canShowAll = pi.isSupportMultiUiSession;
   if (pi.displays.length > 1 &&
-      pi.currentDisplay != kAllDisplayValue &&
+      (pi.currentDisplay != kAllDisplayValue || canShowAll) &&
       (privacyModeState.isEmpty ||
           allowDisplaySwitchInPrivacyMode(pi, privacyModeState.value))) {
     final cur = pi.currentDisplay;
@@ -1319,6 +1345,28 @@ void showOptions(
                               i == cur ? numColorSelected : numColorUnselected,
                           fontWeight: FontWeight.bold))))));
     }
+    if (canShowAll) {
+      // Quest multi-display (fork): "All" = tile every remote display in this panel.
+      final isAll = cur == kAllDisplayValue;
+      children.add(InkWell(
+          onTap: () {
+            if (isAll) return;
+            openMonitorInTheSameTab(kAllDisplayValue, gFFI, pi);
+            gFFI.dialogManager.dismissAll();
+          },
+          child: Ink(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).hintColor),
+                  borderRadius: BorderRadius.circular(2),
+                  color: isAll ? numBgSelected : null),
+              child: Center(
+                  child: Text(translate('All'),
+                      style: TextStyle(
+                          color: isAll ? numColorSelected : numColorUnselected,
+                          fontWeight: FontWeight.bold))))));
+    }
     displays.add(Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Wrap(
@@ -1346,6 +1394,32 @@ void showOptions(
             child: Text(translate('Lock canvas')),
             value: gFFI.canvasModel.locked,
             onChanged: (value) => gFFI.canvasModel.setLocked(value == true)));
+    // Quest multi-display (fork): persistent local option. Auto (empty) = on for Quest.
+    if (gFFI.ffiModel.pi.isSupportMultiUiSession) {
+      displayToggles.insert(
+          1,
+          TToggleMenu(
+              child: Text('Quest multi-display'),
+              value: isQuestMultiDisplayEnabled(),
+              onChanged: (value) async {
+                final on = value == true;
+                await bind.mainSetLocalOption(
+                    key: kOptionQuestMultiDisplay, value: on ? 'Y' : 'N');
+                final pi = gFFI.ffiModel.pi;
+                if (on) {
+                  // Clear a previous single-display pick so auto-switch applies.
+                  gFFI.ffiModel.lastUserDisplay = null;
+                  tryQuestSwitchToAllDisplays(gFFI);
+                } else if (pi.currentDisplay == kAllDisplayValue) {
+                  final primary = (pi.primaryDisplay >= 0 &&
+                          pi.primaryDisplay < pi.displays.length)
+                      ? pi.primaryDisplay
+                      : 0;
+                  openMonitorInTheSameTab(primary, gFFI, pi);
+                }
+                gFFI.dialogManager.dismissAll();
+              }));
+    }
   }
 
   List<TToggleMenu> privacyModeList = [];

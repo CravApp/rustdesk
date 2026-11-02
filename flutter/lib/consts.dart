@@ -188,6 +188,10 @@ const String kOptionTrustedDeviceExpiration = "trusted-device-expiration-days";
 const String kOptionShowVirtualMouse = "show-virtual-mouse";
 const String kOptionVirtualMouseScale = "virtual-mouse-scale";
 const String kOptionShowVirtualJoystick = "show-virtual-joystick";
+// Quest multi-display (fork): local option, 'Y' / 'N' / '' (empty = auto, on for Meta Quest).
+// When on, the mobile client captures ALL remote displays in one session and tiles them
+// in the remote page, instead of showing only the current display.
+const String kOptionQuestMultiDisplay = "quest-multi-display";
 const String kOptionAllowAskForNoteAtEndOfConnection = "allow-ask-for-note";
 const String kOptionAllowMonitorSwitchMainToolbar = "allow-monitor-switch-main-toolbar";
 const String kOptionAllowMonitorSwitchMinToolbar = "allow-monitor-switch-min-toolbar";

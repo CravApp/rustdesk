@@ -131,3 +131,49 @@ class ImagePainter extends CustomPainter {
     return oldDelegate != this;
   }
 }
+
+/// Quest multi-display (fork): paints several remote display images (mobile
+/// "all displays" mode) into one canvas. Each entry is drawn at its offset
+/// relative to the union rect of all remote displays, i.e. the same layout as
+/// the remote virtual desktop. `x`/`y`/`scale` have the same meaning as in
+/// [ImagePainter] (canvas origin of the union rect, in image pixels / scale).
+class MultiDisplayImagePainter extends CustomPainter {
+  MultiDisplayImagePainter({
+    required this.images,
+    required this.x,
+    required this.y,
+    required this.scale,
+  });
+
+  /// (image, offset of the display inside the union rect, in remote pixels)
+  final List<MapEntry<ui.Image, Offset>> images;
+  final double x;
+  final double y;
+  final double scale;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (images.isEmpty) return;
+    if (x.isNaN || y.isNaN) return;
+    canvas.scale(scale, scale);
+    var paint = Paint();
+    if ((scale - 1.0).abs() > 0.001) {
+      paint.filterQuality = FilterQuality.medium;
+      if (scale > 10.00000) {
+        paint.filterQuality = FilterQuality.high;
+      }
+    }
+    for (final e in images) {
+      canvas.drawImage(
+          e.key,
+          Offset((x + e.value.dx).toInt().toDouble(),
+              (y + e.value.dy).toInt().toDouble()),
+          paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) {
+    return oldDelegate != this;
+  }
+}

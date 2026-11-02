@@ -1230,8 +1230,20 @@ impl FlutterHandler {
         let mut is_sent = false;
         let is_multi_sessions = self.is_multi_ui_session();
         for h in self.session_handlers.read().unwrap().values() {
-            // The soft renderer does not support multi-displays session for now.
+            // The soft renderer does not support multi-displays session for now on desktop,
+            // where multi-displays sessions use the texture renderer instead.
+            //
+            // Quest multi-display (fork): mobile clients have no texture renderer, so a
+            // multi-displays session ("all displays" tiled in one panel) must be served by the
+            // soft renderer. Each display keeps its own `RgbaData` buffer and valid flag in
+            // `display_rgbas`, and Flutter fetches/releases it per display
+            // (`session_get_rgba(display)` / `session_next_rgba(display)`).
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if h.displays.len() > 1 {
+                continue;
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            if h.displays.len() > 1 && !h.displays.contains(&display) {
                 continue;
             }
             // If there're multiple ui sessions, we only notify the ui session that has the display.

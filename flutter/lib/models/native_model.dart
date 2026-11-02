@@ -196,6 +196,13 @@ class PlatformFFI {
         name = '${androidInfo.brand}-${androidInfo.model}';
         id = androidInfo.id.hashCode.toString();
         androidVersion = androidInfo.version.sdkInt;
+        // Quest multi-display (fork): detect Meta Quest (manufacturer "Oculus" or "Meta").
+        final manufacturer = androidInfo.manufacturer.toLowerCase();
+        final brand = androidInfo.brand.toLowerCase();
+        isQuestDevice = manufacturer.contains('oculus') ||
+            manufacturer.contains('meta') ||
+            brand.contains('oculus') ||
+            brand.contains('meta');
       } else if (isIOS) {
         IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
         name = iosInfo.utsname.machine;

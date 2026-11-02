@@ -64,6 +64,46 @@ final isWebOnMacOs = isWebOnMacOS_;
 var isMobile = isAndroid || isIOS;
 var version = '';
 int androidVersion = 0;
+// Quest multi-display (fork): true when running on a Meta Quest headset (Horizon OS).
+// Set in `PlatformFFI.init()` from `AndroidDeviceInfo.manufacturer/brand`.
+bool isQuestDevice = false;
+
+/// Quest multi-display (fork): whether the mobile remote page should request and tile
+/// all remote displays. Explicit local option wins; otherwise default on for Quest.
+bool isQuestMultiDisplayEnabled() {
+  if (!isMobile) return false;
+  final v = bind.mainGetLocalOption(key: kOptionQuestMultiDisplay);
+  if (v == 'Y') return true;
+  if (v == 'N') return false;
+  return isQuestDevice;
+}
+
+/// Quest multi-display (fork): switch the session to "all displays" tiled mode if it
+/// is enabled and possible (peer supports multi-ui-session / CaptureDisplays and has
+/// more than one display). Returns true if a switch was requested.
+bool tryQuestSwitchToAllDisplays(FFI ffi) {
+  if (!isQuestMultiDisplayEnabled()) return false;
+  final pi = ffi.ffiModel.pi;
+  if (!pi.isSupportMultiUiSession) return false;
+  if (pi.displays.length < 2) return false;
+  // The user explicitly picked a single display in this session: respect it.
+  final userPick = ffi.ffiModel.lastUserDisplay;
+  if (userPick != null && userPick != kAllDisplayValue) return false;
+  if (pi.currentDisplay == kAllDisplayValue) {
+    // Already in all-displays mode, but the display set may have changed
+    // (e.g. a RustDesk virtual display was added/removed): re-request capture.
+    bind.sessionSwitchDisplay(
+      isDesktop: isDesktop,
+      sessionId: ffi.sessionId,
+      value: Int32List.fromList(
+          List.generate(pi.displays.length, (index) => index)),
+    );
+    return true;
+  }
+  openMonitorInTheSameTab(kAllDisplayValue, ffi, pi,
+      updateCursorPos: false, recordSelection: false);
+  return true;
+}
 
 // Only used on Linux.
 // `windowManager.setResizable(false)` will reset the window size to the default size on Linux.

@@ -1681,6 +1681,18 @@ class FfiModel with ChangeNotifier {
       _pi.displays.value = newDisplays;
       _pi.displaysCount.value = _pi.displays.length;
 
+      // Quest multi-display (fork): when the remote display set changes (e.g. a
+      // RustDesk virtual display is created/removed from the toolbar), (re)request
+      // capture of all displays so the new one shows up tiled in this panel.
+      if (isMobile) {
+        Future.delayed(Duration.zero, () {
+          final ffi = parent.target;
+          if (ffi == null || ffi.closed) return;
+          ffi.imageModel.pruneDisplayImages(_pi.displays.length);
+          tryQuestSwitchToAllDisplays(ffi);
+        });
+      }
+
       if (_pi.currentDisplay == kAllDisplayValue) {
         updateCurDisplay(sessionId);
         // to-do: What if the displays are changed?
@@ -1937,7 +1949,57 @@ class ImageModel with ChangeNotifier {
 
   addCallbackOnFirstImage(Function(String) cb) => callbacksOnFirstImage.add(cb);
 
-  clearImage() => _image = null;
+  clearImage() {
+    _image = null;
+    _clearDisplayImages();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quest multi-display (fork): per-display images for the mobile "all displays"
+  // tiled mode. On desktop, all-displays mode uses one texture per display
+  // (see desktop_render_texture.dart). Mobile has no texture renderer, so each
+  // `EventToUI::Rgba(display)` is decoded into its own `ui.Image`, keyed by the
+  // remote display index (`VideoFrame.display`). The painter draws each image at
+  // its remote desktop offset inside the union rect (`ffiModel.rect`), so pointer
+  // coordinates map 1:1 onto the remote virtual desktop and reach the right display.
+  // ---------------------------------------------------------------------------
+  final Map<int, ui.Image> _displayImages = {};
+
+  /// Images per remote display index (mobile all-displays mode only).
+  Map<int, ui.Image> get displayImages => _displayImages;
+
+  /// True when the mobile client is rendering all remote displays tiled.
+  bool get isMobileMultiDisplay =>
+      isMobile &&
+      parent.target?.ffiModel.pi.currentDisplay == kAllDisplayValue;
+
+  /// True if anything is drawable (single image or any per-display image).
+  bool get hasImage => _image != null || _displayImages.isNotEmpty;
+
+  /// Drop images of displays that no longer exist on the remote side.
+  void pruneDisplayImages(int displayCount) {
+    final stale = _displayImages.keys.where((d) => d >= displayCount).toList();
+    for (final d in stale) {
+      _displayImages.remove(d)?.dispose();
+    }
+    if (stale.isNotEmpty) notifyListeners();
+  }
+
+  void _clearDisplayImages() {
+    for (final image in _displayImages.values) {
+      image.dispose();
+    }
+    _displayImages.clear();
+  }
+
+  Future<void> _updateDisplayImage(int display, ui.Image image) async {
+    if (!hasImage && parent.target != null) {
+      await initializeCursorAndCanvas(parent.target!);
+    }
+    _displayImages[display]?.dispose();
+    _displayImages[display] = image;
+    notifyListeners();
+  }
 
   bool _webDecodingRgba = false;
   final List<Uint8List> _webRgbaList = List.empty(growable: true);
@@ -1990,6 +2052,17 @@ class ImageModel with ChangeNotifier {
       image?.dispose();
       return;
     }
+    // Quest multi-display (fork): keep one image per display in all-displays mode.
+    if (isMobileMultiDisplay) {
+      if (image != null) {
+        await _updateDisplayImage(display, image);
+      }
+      return;
+    }
+    if (_displayImages.isNotEmpty) {
+      // Left all-displays mode: drop stale per-display images.
+      _clearDisplayImages();
+    }
     await update(image);
   }
 
@@ -2019,21 +2092,35 @@ class ImageModel with ChangeNotifier {
     return true;
   }
 
+  // Quest multi-display (fork): in all-displays mode the "image" is the union rect.
+  Size? get _contentSize {
+    if (isMobileMultiDisplay && _displayImages.isNotEmpty) {
+      final rect = parent.target?.ffiModel.rect;
+      if (rect != null && rect.width > 0 && rect.height > 0) {
+        return rect.size;
+      }
+    }
+    if (_image == null) return null;
+    return Size(_image!.width.toDouble(), _image!.height.toDouble());
+  }
+
   // mobile only
   double get maxScale {
-    if (_image == null) return 1.5;
+    final content = _contentSize;
+    if (content == null) return 1.5;
     final size = parent.target!.canvasModel.getSize();
-    final xscale = size.width / _image!.width;
-    final yscale = size.height / _image!.height;
+    final xscale = size.width / content.width;
+    final yscale = size.height / content.height;
     return max(1.5, max(xscale, yscale));
   }
 
   // mobile only
   double get minScale {
-    if (_image == null) return 1.5;
+    final content = _contentSize;
+    if (content == null) return 1.5;
     final size = parent.target!.canvasModel.getSize();
-    final xscale = size.width / _image!.width;
-    final yscale = size.height / _image!.height;
+    final xscale = size.width / content.width;
+    final yscale = size.height / content.height;
     return min(xscale, yscale) / 1.5;
   }
 
@@ -2053,6 +2140,7 @@ class ImageModel with ChangeNotifier {
   void disposeImage() {
     _image?.dispose();
     _image = null;
+    _clearDisplayImages();
   }
 }
 
@@ -2734,7 +2822,7 @@ class CanvasModel with ChangeNotifier {
 
   // mobile only
   updateScale(double v, Offset focalPoint) {
-    if (parent.target?.imageModel.image == null) return;
+    if (parent.target?.imageModel.hasImage != true) return;
     final s = _scale;
     _scale *= v;
     final maxs = parent.target?.imageModel.maxScale ?? 1;
@@ -3365,7 +3453,7 @@ class CursorModel with ChangeNotifier {
     }
     double dx = delta.dx;
     double dy = delta.dy;
-    if (parent.target?.imageModel.image == null) return;
+    if (parent.target?.imageModel.hasImage != true) return;
     final scale = parent.target?.canvasModel.scale ?? 1.0;
     dx /= scale;
     dy /= scale;
@@ -4383,7 +4471,7 @@ class FFI {
       model.dispose();
     }
     _terminalModels.clear();
-    if (imageModel.image != null && !isWebDesktop) {
+    if (imageModel.hasImage && !isWebDesktop) {
       await setCanvasConfig(
           sessionId,
           cursorModel.x,
