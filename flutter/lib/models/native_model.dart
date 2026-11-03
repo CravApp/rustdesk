@@ -134,6 +134,29 @@ class PlatformFFI {
       _ffiBind.sessionRegisterGpuTexture(
           sessionId: sessionId, display: display, ptr: ptr);
 
+  /// Quest multi-window (fork): light init for a secondary display panel (own Flutter
+  /// engine, same process). The Rust core is already initialized by the main window, so
+  /// no `mainInit`, no device id / name, and no global event stream (it would replace
+  /// the main window's one, which is keyed by app type).
+  Future<void> initQuestWindow() async {
+    _appType = 'quest_display';
+    final dylib = DynamicLibrary.open('librustdesk.so');
+    _session_get_rgba = dylib.lookupFunction<F3Dart, F3>("session_get_rgba");
+    _ffiBind = RustdeskImpl(dylib);
+    try {
+      _dir = (await getApplicationDocumentsDirectory()).path;
+    } catch (e) {
+      debugPrint('Failed to get documents directory: $e');
+    }
+    try {
+      AndroidDeviceInfo androidInfo = await DeviceInfoPlugin().androidInfo;
+      androidVersion = androidInfo.version.sdkInt;
+    } catch (e) {
+      debugPrint('Failed to get android info: $e');
+    }
+    version = await getVersion();
+  }
+
   /// Init the FFI class, loads the native Rust core library.
   Future<void> init(String appType) async {
     _appType = appType;

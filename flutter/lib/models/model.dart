@@ -4211,6 +4211,10 @@ class FFI {
     int? tabWindowId,
     int? display,
     List<int>? displays,
+    // Quest multi-window (fork): set in a secondary display panel. The panel joins the
+    // existing peer connection (already authenticated by the main window) as an extra
+    // ui session that owns [display] only. The main window's peer data is passed in.
+    String? questCachedPeerData,
   }) {
     closed = false;
     if (isMobile) mobileReset();
@@ -4238,7 +4242,7 @@ class FFI {
       cursorModel.peerId = id;
     }
 
-    final isNewPeer = tabWindowId == null;
+    final isNewPeer = tabWindowId == null && questCachedPeerData == null;
     // If tabWindowId != null, this session is a "tab -> window" one.
     // Else this session is a new one.
     if (isNewPeer) {
@@ -4322,6 +4326,25 @@ class FFI {
 
     final cb = ffiModel.startEventListener(sessionId, id);
 
+    // Quest multi-window (fork): apply the main window's peer data before handling
+    // any frame, then ask the core for this display's init messages (cursor, etc.).
+    Future<void>? questReady;
+    final questCached = questCachedPeerData;
+    if (questCached != null) {
+      questReady = Future.delayed(Duration.zero, () async {
+        final data = CachedPeerData.fromString(questCached);
+        if (data == null) {
+          debugPrint('Quest multi-window: cannot decode the cached peer data');
+          return;
+        }
+        ffiModel.setPermissions(data.permissions);
+        await ffiModel.handleCachedPeerData(data, id);
+        await sessionRefreshVideo(sessionId, ffiModel.pi);
+        await bind.sessionRequestNewDisplayInitMsgs(
+            sessionId: sessionId, display: ffiModel.pi.currentDisplay);
+      });
+    }
+
     imageModel.updateUserTextureRender();
     final hasGpuTextureRender = bind.mainHasGpuTextureRender();
     final SimpleWrapper<bool> isToNewWindowNotified = SimpleWrapper(false);
@@ -4354,6 +4377,7 @@ class FFI {
         isToNewWindowNotified.value = true;
       }
       () async {
+        if (questReady != null) await questReady;
         if (message is EventToUI_Event) {
           if (message.field0 == "close") {
             closed = true;

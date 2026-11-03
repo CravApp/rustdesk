@@ -15,6 +15,7 @@ import '../../models/platform_model.dart';
 import '../../models/server_model.dart';
 import '../../utils/android_documents.dart';
 import 'home_page.dart';
+import 'package:flutter_hbb/mobile/quest_multi_window.dart';
 
 class ServerPage extends StatefulWidget implements PageShape {
   @override
@@ -982,6 +983,12 @@ void androidChannelInit() {
             var text = arguments["text"] as String;
             var link = (arguments["link"] ?? '') as String;
             msgBox(gFFI.sessionId, type, title, text, link, gFFI.dialogManager);
+            break;
+          }
+        case "on_quest_window_closed":
+          {
+            // Quest multi-window (fork): a display panel was closed.
+            questOnDisplayWindowClosed(gFFI, arguments);
             break;
           }
         case "stop_service":

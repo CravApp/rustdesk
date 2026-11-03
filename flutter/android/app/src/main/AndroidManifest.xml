@@ -83,6 +83,22 @@
             </intent-filter>
         </activity>
 
+        <!-- Quest multi-window (fork): one Horizon OS 2D panel per remote display. -->
+        <activity
+            android:name=".QuestDisplayActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode|navigation"
+            android:excludeFromRecents="false"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:resizeableActivity="true"
+            android:taskAffinity="com.carriez.flutter_hbb.questdisplay"
+            android:theme="@style/LaunchTheme"
+            android:windowSoftInputMode="adjustResize">
+            <layout
+                android:defaultWidth="1280dp"
+                android:defaultHeight="800dp" />
+        </activity>
+
         <activity
             android:name=".PermissionRequestTransparentActivity"
             android:excludeFromRecents="true"

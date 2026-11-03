@@ -192,6 +192,10 @@ const String kOptionShowVirtualJoystick = "show-virtual-joystick";
 // When on, the mobile client captures ALL remote displays in one session and tiles them
 // in the remote page, instead of showing only the current display.
 const String kOptionQuestMultiDisplay = "quest-multi-display";
+// Quest multi-window (fork): local option, 'Y' / 'N' / '' (empty = auto, on for Meta Quest).
+// When on, every remote display opens in its own Horizon OS panel (activity) instead of
+// being tiled in the main panel. Tiled mode stays available as fallback (option off).
+const String kOptionQuestMultiWindow = "quest-multi-window";
 const String kOptionAllowAskForNoteAtEndOfConnection = "allow-ask-for-note";
 const String kOptionAllowMonitorSwitchMainToolbar = "allow-monitor-switch-main-toolbar";
 const String kOptionAllowMonitorSwitchMinToolbar = "allow-monitor-switch-min-toolbar";

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter_hbb/mobile/quest_multi_window.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
@@ -122,12 +124,24 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     gFFI.ffiModel.updateEventListener(sessionId, widget.id);
-    gFFI.start(
-      widget.id,
-      password: widget.password,
-      isSharedPassword: widget.isSharedPassword,
-      forceRelay: widget.forceRelay,
-    );
+    final qa = questWindowArgs;
+    if (qa != null) {
+      // Quest multi-window (fork): this panel joins the main window's connection
+      // and owns only its display.
+      gFFI.start(
+        widget.id,
+        display: qa.display,
+        displays: [qa.display],
+        questCachedPeerData: qa.cachedData,
+      );
+    } else {
+      gFFI.start(
+        widget.id,
+        password: widget.password,
+        isSharedPassword: widget.isSharedPassword,
+        forceRelay: widget.forceRelay,
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
       gFFI.dialogManager
@@ -196,6 +210,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // down. The reconnect then re-attaches to the leaked session and is stuck on
     // "Connecting...". Dispatching it here makes teardown happen synchronously on
     // pop; the `sessionClose` in `gFFI.close()` becomes a no-op once removed.
+    // Quest multi-window (fork): close the display panels of this connection first.
+    questCloseAllDisplayWindows(gFFI);
     unawaited(bind.sessionClose(sessionId: sessionId));
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -1309,7 +1325,10 @@ void showOptions(
   final privacyModeState = PrivacyModeState.find(id);
   // Quest multi-display (fork): keep the selector visible in all-displays mode
   // (so the user can go back to one display) when the peer supports it.
-  final canShowAll = pi.isSupportMultiUiSession;
+  // Quest multi-window (fork): no "All" in a display panel or in multi-window mode.
+  final canShowAll = pi.isSupportMultiUiSession &&
+      !isQuestDisplayWindow &&
+      !isQuestMultiWindowEnabled();
   if (pi.displays.length > 1 &&
       (pi.currentDisplay != kAllDisplayValue || canShowAll) &&
       (privacyModeState.isEmpty ||
@@ -1394,8 +1413,45 @@ void showOptions(
             child: Text(translate('Lock canvas')),
             value: gFFI.canvasModel.locked,
             onChanged: (value) => gFFI.canvasModel.setLocked(value == true)));
+    // Quest multi-window (fork): one Horizon OS panel per display. Auto (empty) = on
+    // for Quest. Off = fallback to the tiled mode below (if enabled).
+    if (gFFI.ffiModel.pi.isSupportMultiUiSession &&
+        isAndroid &&
+        !isQuestDisplayWindow) {
+      final multiWindowOn = isQuestMultiWindowEnabled();
+      displayToggles.insert(
+          1,
+          TToggleMenu(
+              child: Text('Quest multi-window'),
+              value: multiWindowOn,
+              onChanged: (value) async {
+                final on = value == true;
+                await bind.mainSetLocalOption(
+                    key: kOptionQuestMultiWindow, value: on ? 'Y' : 'N');
+                if (on) {
+                  gFFI.ffiModel.lastUserDisplay = null;
+                  questReopenDisplayWindows(gFFI);
+                } else {
+                  questCloseAllDisplayWindows(gFFI);
+                  // Fallback: tiled mode (if enabled).
+                  tryQuestSwitchToAllDisplays(gFFI);
+                }
+                gFFI.dialogManager.dismissAll();
+              }));
+      if (multiWindowOn && gFFI.ffiModel.pi.displays.length > 1) {
+        displayToggles.insert(
+            2,
+            TToggleMenu(
+                child: Text('Reopen display windows'),
+                value: false,
+                onChanged: (value) {
+                  questReopenDisplayWindows(gFFI);
+                  gFFI.dialogManager.dismissAll();
+                }));
+      }
+    }
     // Quest multi-display (fork): persistent local option. Auto (empty) = on for Quest.
-    if (gFFI.ffiModel.pi.isSupportMultiUiSession) {
+    if (gFFI.ffiModel.pi.isSupportMultiUiSession && !isQuestDisplayWindow) {
       displayToggles.insert(
           1,
           TToggleMenu(

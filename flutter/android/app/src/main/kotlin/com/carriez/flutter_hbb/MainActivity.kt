@@ -290,6 +290,19 @@ class MainActivity : FlutterActivity() {
             if (documentPicker.handle(call, result)) return@setMethodCallHandler
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
+                // Quest multi-window (fork): one Horizon OS panel per remote display.
+                "quest_open_display_window" -> {
+                    val args = call.arguments as? Map<*, *>
+                    result.success(args != null && QuestDisplayActivity.open(this, args))
+                }
+                "quest_close_display_window" -> {
+                    (call.arguments as? Number)?.toInt()?.let { QuestDisplayActivity.close(it) }
+                    result.success(true)
+                }
+                "quest_close_display_windows" -> {
+                    QuestDisplayActivity.closeAll()
+                    result.success(true)
+                }
                 "init_service" -> {
                     Intent(activity, MainService::class.java).also {
                         bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)

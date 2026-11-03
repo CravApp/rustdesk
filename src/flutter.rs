@@ -2228,6 +2228,11 @@ pub mod sessions {
                     .keys()
                     .cloned(),
             );
+            // Quest multi-window (fork): mobile has no texture renderer, so
+            // `map_display_sessions` stays empty. Each ui session (Horizon OS panel)
+            // owns the displays in `h.displays` instead.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            remains_displays.extend(h.displays.iter().cloned());
         }
         if !remains_displays.is_empty() {
             session.capture_displays(
@@ -2254,7 +2259,19 @@ pub mod sessions {
                     s.next_rgba(value[0] as usize);
 
                     if !is_desktop {
-                        s.capture_displays(vec![], vec![], value);
+                        // Quest multi-window (fork): with several ui sessions (one Horizon OS
+                        // panel per display) keep capturing the displays of the other panels.
+                        if write_lock.len() > 1 {
+                            let mut set: Vec<i32> = write_lock
+                                .values()
+                                .flat_map(|h| h.displays.iter().map(|d| *d as i32))
+                                .collect();
+                            set.sort();
+                            set.dedup();
+                            s.capture_displays(vec![], vec![], set);
+                        } else {
+                            s.capture_displays(vec![], vec![], value);
+                        }
                     } else {
                         // Check if other displays are needed.
                         if value.len() == 1 {
@@ -2268,6 +2285,19 @@ pub mod sessions {
                     }
                 } else {
                     // Try capture all displays.
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
+                    {
+                        // Quest multi-window (fork): keep the other panels' displays.
+                        let mut set: Vec<i32> = write_lock
+                            .values()
+                            .flat_map(|h| h.displays.iter().map(|d| *d as i32))
+                            .collect();
+                        set.extend(value.iter().cloned());
+                        set.sort();
+                        set.dedup();
+                        s.capture_displays(vec![], vec![], set);
+                    }
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     s.capture_displays(vec![], vec![], value);
                 }
                 // When switching display, we also need to send "Refresh display" message.

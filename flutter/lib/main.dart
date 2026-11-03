@@ -26,6 +26,9 @@ import 'package:window_manager/window_manager.dart';
 import 'common.dart';
 import 'consts.dart';
 import 'mobile/pages/home_page.dart';
+import 'package:flutter_hbb/mobile/pages/remote_page.dart';
+import 'package:flutter_hbb/mobile/quest_multi_window.dart';
+import 'package:uuid/uuid.dart';
 import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
@@ -34,6 +37,25 @@ import 'models/platform_model.dart';
 int? kWindowId;
 WindowType? kWindowType;
 late List<String> kBootArgs;
+
+/// Quest multi-window (fork): Dart entrypoint of a secondary display panel
+/// (`QuestDisplayActivity`, own Flutter engine in the same process).
+@pragma('vm:entry-point')
+Future<void> questDisplayMain(List<String> args) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  kBootArgs = [];
+  questWindowArgs = QuestWindowArgs.fromArgs(args);
+  final qa = questWindowArgs;
+  if (qa == null) {
+    debugPrint('questDisplayMain: invalid args $args');
+    return;
+  }
+  isQuestDevice = qa.isQuest;
+  await platformFFI.initQuestWindow();
+  await initGlobalFFI(sessionId: UuidValue(qa.sessionId));
+  updateSystemWindowTheme();
+  runApp(App());
+}
 
 Future<void> main(List<String> args) async {
   earlyAssert();
@@ -505,7 +527,11 @@ class _AppState extends State<App> with WidgetsBindingObserver {
               ? const DesktopTabPage()
               : isWeb
                   ? WebHomePage()
-                  : HomePage(),
+                  : isQuestDisplayWindow
+                      // Quest multi-window (fork): a display panel shows only the
+                      // remote page of its display.
+                      ? RemotePage(id: questWindowArgs!.peerId)
+                      : HomePage(),
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,

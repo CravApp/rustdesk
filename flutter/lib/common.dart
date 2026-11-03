@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/mobile/quest_multi_window.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -82,6 +83,10 @@ bool isQuestMultiDisplayEnabled() {
 /// is enabled and possible (peer supports multi-ui-session / CaptureDisplays and has
 /// more than one display). Returns true if a switch was requested.
 bool tryQuestSwitchToAllDisplays(FFI ffi) {
+  // Quest multi-window (fork): secondary display panels never switch displays.
+  if (isQuestDisplayWindow) return false;
+  // Quest multi-window (fork): one panel per display has priority over tiling.
+  if (questSyncDisplayWindows(ffi)) return true;
   if (!isQuestMultiDisplayEnabled()) return false;
   final pi = ffi.ffiModel.pi;
   if (!pi.isSupportMultiUiSession) return false;
@@ -740,6 +745,12 @@ String formatDurationToTime(Duration duration) {
 }
 
 closeConnection({String? id}) {
+  // Quest multi-window (fork): a display panel closes its own activity.
+  if (isQuestDisplayWindow) {
+    bind.sessionClose(sessionId: gFFI.sessionId);
+    gFFI.invokeMethod('quest_window_finish').catchError((_) => false);
+    return;
+  }
   if (isAndroid || isIOS) {
     () async {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
@@ -1635,9 +1646,9 @@ late FFI _globalFFI;
 
 FFI get gFFI => _globalFFI;
 
-Future<void> initGlobalFFI() async {
+Future<void> initGlobalFFI({SessionID? sessionId}) async {
   debugPrint("_globalFFI init");
-  _globalFFI = FFI(null);
+  _globalFFI = FFI(sessionId);
   debugPrint("_globalFFI init end");
   // after `put`, can also be globally found by Get.find<FFI>();
   Get.put<FFI>(_globalFFI, permanent: true);
