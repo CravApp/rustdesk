@@ -205,6 +205,12 @@ pub fn session_start_with_displays(
     session_start_(&session_id, &id, events2ui)?;
 
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        log::info!(
+            "QuestMW session_start_with_displays session={} id={} displays={:?}",
+            session_id,
+            id,
+            displays
+        );
         session.capture_displays(displays.clone(), vec![], vec![]);
         for display in displays {
             session.refresh_video(display as _);

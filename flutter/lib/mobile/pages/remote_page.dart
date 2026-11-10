@@ -90,7 +90,10 @@ class RemotePage extends StatefulWidget {
 
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _timer;
-  bool _showBar = !isWebDesktop;
+  // Quest multi-window: hide the bottom toolbar in secondary panels. On Horizon OS
+  // the bar (accent blue, down-arrow to collapse) plus the connecting overlay in
+  // bottomNavigationBar can fill the whole panel and hide the video until dismissed.
+  bool _showBar = !isQuestDisplayWindow && !isWebDesktop;
   bool _showGestureHelp = false;
   String _value = '';
   Orientation? _currentOrientation;
@@ -128,6 +131,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (qa != null) {
       // Quest multi-window (fork): this panel joins the main window's connection
       // and owns only its display.
+      debugPrint(
+          'QuestMW RemotePage join peer=${widget.id} display=${qa.display} session=${qa.sessionId}');
       gFFI.start(
         widget.id,
         display: qa.display,
@@ -144,8 +149,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
-      gFFI.dialogManager
-          .showLoading(translate('Connecting...'), onCancel: closeConnection);
+      // The panel joins an already-authenticated session. Showing "Connecting..."
+      // (and the canvas overlay in the bottom bar) covers the video until the
+      // user dismisses it. Skip both in Quest display windows.
+      if (!isQuestDisplayWindow) {
+        gFFI.dialogManager
+            .showLoading(translate('Connecting...'), onCancel: closeConnection);
+      } else {
+        debugPrint(
+            'QuestMW RemotePage: skip Connecting overlay, toolbar hidden, display=${qa?.display}');
+      }
     });
     WakelockManager.enable(_uniqueKey);
     _physicalFocusNode.requestFocus();
@@ -158,6 +171,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         .changeCurrentKey(MessageKey(widget.id, ChatModel.clientModeID));
     _blockableOverlayState.applyFfi(gFFI);
     gFFI.imageModel.addCallbackOnFirstImage((String peerId) {
+      if (isQuestDisplayWindow) {
+        final d = questWindowArgs?.display ?? 0;
+        debugPrint(
+            'QuestMW first image paint peer=$peerId display=$d '
+            'getRgbaSize=${platformFFI.getRgbaSize(gFFI.sessionId, d)} '
+            'waitForFirstImage=${gFFI.ffiModel.waitForFirstImage.value} '
+            'isSet=${gFFI.ffiModel.pi.isSet.value}');
+      }
       gFFI.recordingModel
           .updateStatus(bind.sessionGetIsRecording(sessionId: gFFI.sessionId));
       if (gFFI.recordingModel.start) {
@@ -546,22 +567,27 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       }
                     });
                   }),
-          bottomNavigationBar: Obx(() => Stack(
-                alignment: Alignment.bottomCenter,
-                children: [
-                  gFFI.ffiModel.pi.isSet.isTrue &&
-                          gFFI.ffiModel.waitForFirstImage.isTrue
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : () {
-                          gFFI.ffiModel.tryShowAndroidActionsOverlay();
-                          return Offstage();
-                        }(),
-                  _bottomWidget(),
-                  gFFI.ffiModel.pi.isSet.isFalse
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : Offstage(),
-                ],
-              )),
+          // Quest display panels: never put emptyOverlay in the bottom bar.
+          // BlockableOverlay expands to the Scaffold's max height, so the bar
+          // covers the video with a solid color until it is dismissed.
+          bottomNavigationBar: isQuestDisplayWindow
+              ? (_showBar ? _bottomWidget() : null)
+              : Obx(() => Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      gFFI.ffiModel.pi.isSet.isTrue &&
+                              gFFI.ffiModel.waitForFirstImage.isTrue
+                          ? emptyOverlay(MyTheme.canvasColor)
+                          : () {
+                              gFFI.ffiModel.tryShowAndroidActionsOverlay();
+                              return Offstage();
+                            }(),
+                      _bottomWidget(),
+                      gFFI.ffiModel.pi.isSet.isFalse
+                          ? emptyOverlay(MyTheme.canvasColor)
+                          : Offstage(),
+                    ],
+                  )),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [

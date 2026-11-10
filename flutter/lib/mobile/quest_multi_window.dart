@@ -160,7 +160,7 @@ void _openWindow(FFI ffi, int display, String cached) {
   final sid = Uuid().v4();
   _state.windows[display] = sid;
   _state.handled.add(display);
-  debugPrint('Quest multi-window: open display $display, session $sid');
+  debugPrint('QuestMW open display $display, session $sid');
   ffi.invokeMethod('quest_open_display_window', {
     'peer_id': ffi.id,
     'display': display,
@@ -170,11 +170,11 @@ void _openWindow(FFI ffi, int display, String cached) {
     'is_quest': isQuestDevice,
   }).then((ok) {
     if (ok != true) {
-      debugPrint('Quest multi-window: failed to open display $display');
+      debugPrint('QuestMW failed to open display $display');
       _state.windows.remove(display);
     }
   }).catchError((e) {
-    debugPrint('Quest multi-window: open display $display error: $e');
+    debugPrint('QuestMW open display $display error: $e');
     _state.windows.remove(display);
   });
 }
@@ -227,7 +227,7 @@ void questOnDisplayWindowClosed(FFI ffi, dynamic arguments) {
     if (sid.isNotEmpty) {
       bind.sessionClose(sessionId: UuidValue(sid));
     }
-    debugPrint('Quest multi-window: display $display panel closed');
+    debugPrint('QuestMW display $display panel closed');
   } catch (e) {
     debugPrint('questOnDisplayWindowClosed: $e');
   }

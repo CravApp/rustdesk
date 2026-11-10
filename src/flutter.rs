@@ -1211,6 +1211,7 @@ impl FlutterHandler {
         // If the current rgba is not fetched by flutter, i.e., is valid.
         // We give up sending a new event to flutter.
         let mut rgba_write_lock = self.display_rgbas.write().unwrap();
+        let first_for_display = !rgba_write_lock.contains_key(&display);
         if let Some(rgba_data) = rgba_write_lock.get_mut(&display) {
             if rgba_data.valid {
                 return;
@@ -1229,7 +1230,27 @@ impl FlutterHandler {
 
         let mut is_sent = false;
         let is_multi_sessions = self.is_multi_ui_session();
-        for h in self.session_handlers.read().unwrap().values() {
+        let handlers = self.session_handlers.read().unwrap();
+        if first_for_display {
+            let info: Vec<String> = handlers
+                .iter()
+                .map(|(sid, h)| {
+                    format!(
+                        "{} displays={:?} stream={}",
+                        sid,
+                        h.displays,
+                        h.event_stream.is_some()
+                    )
+                })
+                .collect();
+            log::info!(
+                "QuestMW on_rgba_soft_render first display={} multi={} handlers=[{}]",
+                display,
+                is_multi_sessions,
+                info.join("; ")
+            );
+        }
+        for h in handlers.values() {
             // The soft renderer does not support multi-displays session for now on desktop,
             // where multi-displays sessions use the texture renderer instead.
             //
@@ -1257,6 +1278,7 @@ impl FlutterHandler {
                 is_sent = true;
             }
         }
+        drop(handlers);
         // We need `is_sent` here. Because we use texture render for multi-displays session.
         //
         // Eg. We have two windows, one is display 1, the other is displays 0&1.
@@ -1265,9 +1287,17 @@ impl FlutterHandler {
         // 1. "display 1" will not send the event.
         // 2. "displays 0&1" will not send the event. Because it uses texutre render for now.
         if !is_sent {
+            if first_for_display {
+                log::info!(
+                    "QuestMW on_rgba_soft_render display={} is_sent=false, valid reset",
+                    display
+                );
+            }
             if let Some(rgba_data) = self.display_rgbas.write().unwrap().get_mut(&display) {
                 rgba_data.valid = false;
             }
+        } else if first_for_display {
+            log::info!("QuestMW on_rgba_soft_render display={} is_sent=true", display);
         }
     }
 
@@ -1303,6 +1333,12 @@ pub fn session_add_existed(
     } else {
         ConnType::DEFAULT_CONN
     };
+    log::info!(
+        "QuestMW session_add_existed peer={} session={} displays={:?}",
+        peer_id,
+        session_id,
+        displays
+    );
     sessions::insert_peer_session_id(peer_id, conn_type, session_id, displays);
     Ok(())
 }
@@ -1416,6 +1452,12 @@ pub fn session_start_(
         if let Some(h) = s.session_handlers.write().unwrap().get_mut(session_id) {
             is_connected = h.event_stream.is_some();
             try_send_close_event(&h.event_stream);
+            log::info!(
+                "QuestMW session_start_ session={} displays={:?} had_stream={}",
+                session_id,
+                h.displays,
+                is_connected
+            );
             h.event_stream = Some(event_stream);
             is_found = true;
             break;
@@ -2268,8 +2310,16 @@ pub mod sessions {
                                 .collect();
                             set.sort();
                             set.dedup();
+                            log::info!(
+                                "QuestMW capture_displays union={:?} session={}",
+                                set, session_id
+                            );
                             s.capture_displays(vec![], vec![], set);
                         } else {
+                            log::info!(
+                                "QuestMW capture_displays value={:?} session={}",
+                                value, session_id
+                            );
                             s.capture_displays(vec![], vec![], value);
                         }
                     } else {
@@ -2295,6 +2345,10 @@ pub mod sessions {
                         set.extend(value.iter().cloned());
                         set.sort();
                         set.dedup();
+                        log::info!(
+                            "QuestMW capture_displays (multi) union={:?} session={}",
+                            set, session_id
+                        );
                         s.capture_displays(vec![], vec![], set);
                     }
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]

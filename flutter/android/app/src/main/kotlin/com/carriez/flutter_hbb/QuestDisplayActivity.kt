@@ -28,7 +28,7 @@ import java.lang.ref.WeakReference
 
 class QuestDisplayActivity : FlutterActivity() {
     companion object {
-        private const val logTag = "QuestDisplayActivity"
+        private const val logTag = "QuestMW"
         const val EXTRA_PEER_ID = "quest_peer_id"
         const val EXTRA_DISPLAY = "quest_display"
         const val EXTRA_SESSION_ID = "quest_session_id"
@@ -90,6 +90,7 @@ class QuestDisplayActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         display = intent.getIntExtra(EXTRA_DISPLAY, -1)
         sessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
+        Log.i(logTag, "onCreate display=$display session=$sessionId")
         if (display >= 0) {
             windows[display] = WeakReference(this)
         }
@@ -98,6 +99,16 @@ class QuestDisplayActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             setTaskDescription(android.app.ActivityManager.TaskDescription(title.toString()))
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.i(logTag, "onResume display=$display")
+    }
+
+    override fun onPause() {
+        Log.i(logTag, "onPause display=$display")
+        super.onPause()
     }
 
     // Dart entrypoint for the secondary engine (see `questDisplayMain` in lib/main.dart).
@@ -125,6 +136,7 @@ class QuestDisplayActivity : FlutterActivity() {
         // MainActivity.flutterMethodChannel: it belongs to the main engine (service events).
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mChannel")
             .setMethodCallHandler { call, result ->
+                Log.i(logTag, "mChannel ${call.method} display=$display args=${call.arguments}")
                 when (call.method) {
                     "enable_soft_keyboard" -> {
                         if (call.arguments as? Boolean == true) {
@@ -138,16 +150,47 @@ class QuestDisplayActivity : FlutterActivity() {
                         MainActivity.rdClipboardManager?.syncClipboard(true)
                         result.success(true)
                     }
+                    GET_VALUE -> {
+                        // Same read-only keys as MainActivity. The remote toolbar
+                        // calls get_value("KEY_IS_SUPPORT_VOICE_CALL") on load.
+                        if (call.arguments is String) {
+                            if (call.arguments == KEY_IS_SUPPORT_VOICE_CALL) {
+                                result.success(isSupportVoiceCall())
+                            } else {
+                                result.error("-1", "No such key", null)
+                            }
+                        } else {
+                            result.success(null)
+                        }
+                    }
+                    "on_voice_call_started", "on_voice_call_closed" -> {
+                        // Voice call audio is owned by the main activity/service.
+                        // Do not throw; the user can start a call from the main panel.
+                        result.success(false)
+                    }
+                    "check_permission" -> {
+                        result.success(false)
+                    }
+                    "request_permission", "init_service", "start_capture",
+                    "stop_service", "check_service", "stop_input",
+                    "cancel_notification", "check_video_permission" -> {
+                        result.success(false)
+                    }
                     "quest_window_finish" -> {
                         result.success(true)
                         runOnUiThread { finishAndRemoveTask() }
                     }
-                    else -> result.notImplemented()
+                    else -> {
+                        // Avoid MissingPluginException in the panel isolate.
+                        Log.w(logTag, "mChannel unhandled ${call.method}, returning null")
+                        result.success(null)
+                    }
                 }
             }
     }
 
     override fun onDestroy() {
+        Log.i(logTag, "onDestroy display=$display byMain=$closedByMain")
         notifyClosed()
         if (display >= 0 && windows[display]?.get() === this) {
             windows.remove(display)

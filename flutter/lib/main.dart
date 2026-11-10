@@ -47,12 +47,19 @@ Future<void> questDisplayMain(List<String> args) async {
   questWindowArgs = QuestWindowArgs.fromArgs(args);
   final qa = questWindowArgs;
   if (qa == null) {
-    debugPrint('questDisplayMain: invalid args $args');
+    debugPrint('QuestMW questDisplayMain: invalid args $args');
     return;
   }
+  debugPrint(
+      'QuestMW questDisplayMain start peer=${qa.peerId} display=${qa.display} session=${qa.sessionId}');
   isQuestDevice = qa.isQuest;
+  // Light FFI only: bind this isolate to the already-running Rust core.
+  // Do not call platformFFI.init() / _startListenEvent — that would replace
+  // the main engine's global event stream (keyed by app type).
   await platformFFI.initQuestWindow();
   await initGlobalFFI(sessionId: UuidValue(qa.sessionId));
+  debugPrint(
+      'QuestMW questDisplayMain: panel-local FFI ready, session=${qa.sessionId}');
   updateSystemWindowTheme();
   runApp(App());
 }

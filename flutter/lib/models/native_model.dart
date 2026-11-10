@@ -140,6 +140,8 @@ class PlatformFFI {
   /// the main window's one, which is keyed by app type).
   Future<void> initQuestWindow() async {
     _appType = 'quest_display';
+    debugPrint(
+        'QuestMW initQuestWindow: bind librustdesk.so without mainInit / global event stream');
     final dylib = DynamicLibrary.open('librustdesk.so');
     _session_get_rgba = dylib.lookupFunction<F3Dart, F3>("session_get_rgba");
     _ffiBind = RustdeskImpl(dylib);

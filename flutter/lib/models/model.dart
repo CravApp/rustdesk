@@ -4272,6 +4272,8 @@ class FFI {
           sessionId: sessionId,
           displays: Int32List.fromList(displays),
           isViewCamera: isViewCamera);
+      debugPrint(
+          'QuestMW sessionAddExistedSync id=$id session=$sessionId displays=$displays addRes="$addRes"');
       if (addRes != '') {
         debugPrint(
             'Unreachable, failed to add existed session to $id, $addRes');
@@ -4303,6 +4305,8 @@ class FFI {
       // and then the displays' capturing requests can be sent.
       stream = bind.sessionStartWithDisplays(
           sessionId: sessionId, id: id, displays: Int32List.fromList(displays));
+      debugPrint(
+          'QuestMW sessionStartWithDisplays session=$sessionId id=$id displays=$displays');
     }
 
     if (isWeb) {
@@ -4349,8 +4353,18 @@ class FFI {
     final hasGpuTextureRender = bind.mainHasGpuTextureRender();
     final SimpleWrapper<bool> isToNewWindowNotified = SimpleWrapper(false);
     // Preserved for the rgba data.
+    var questFirstRgbaLogged = false;
     stream.listen((message) {
       if (closed) return;
+      if (!questFirstRgbaLogged &&
+          questCached != null &&
+          message is EventToUI_Rgba) {
+        questFirstRgbaLogged = true;
+        final d = message.field0;
+        debugPrint(
+            'QuestMW first Rgba received session=$sessionId display=$d '
+            'getRgbaSize=${platformFFI.getRgbaSize(sessionId, d)}');
+      }
       if (tabWindowId != null && !isToNewWindowNotified.value) {
         // Session is read to be moved to a new window.
         // Get the cached data and handle the cached data.
